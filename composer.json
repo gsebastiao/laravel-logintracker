@@ -3,28 +3,19 @@
     "description": "Pacote Laravel para registar entradas e saidas (login/logout), sessoes ativas e status online dos utilizadores, numa tabela configuravel.",
     "type": "library",
     "license": "MIT",
-    "keywords": [
-        "laravel",
-        "login",
-        "logout",
-        "auth",
-        "audit",
-        "tracking",
-        "online-status",
-        "heartbeat"
-    ],
+    "keywords": ["laravel", "login", "logout", "auth", "audit", "tracking", "online-status", "heartbeat"],
     "authors": [
         {
-            "name": "Gerson Sebastião Cossa",
-            "email": "gsebastiao@exemplo.com"
+            "name": "Gsebastiao",
+            "email": "seuemail@exemplo.com"
         }
     ],
     "require": {
         "php": "^8.1",
-        "illuminate/support": "^10.0|^11.0|^12.0|^13.0",
-        "illuminate/database": "^10.0|^11.0|^12.0|^13.0",
-        "illuminate/routing": "^10.0|^11.0|^12.0|^13.0",
-        "illuminate/auth": "^10.0|^11.0|^12.0|^13.0"
+        "illuminate/support": "^10.0|^11.0|^12.0",
+        "illuminate/database": "^10.0|^11.0|^12.0",
+        "illuminate/auth": "^10.0|^11.0|^12.0",
+        "illuminate/routing": "^10.0|^11.0|^12.0"
     },
     "require-dev": {
         "orchestra/testbench": "^8.0|^9.0|^10.0",

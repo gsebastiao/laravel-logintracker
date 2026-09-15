@@ -22,11 +22,12 @@ Este README foi escrito para ser seguido do início ao fim **mesmo que você nun
 4. [Logout automático quando a sessão expira](#4-logout-automático-quando-a-sessão-expira)
 5. [Ativar o ecrã de bloqueio (lockscreen)](#5-ativar-o-ecrã-de-bloqueio-lockscreen)
 6. [Personalizar o ecrã de bloqueio](#6-personalizar-o-ecrã-de-bloqueio)
-7. [Todas as opções de configuração explicadas](#7-todas-as-opções-de-configuração-explicadas)
-8. [Manutenção: purgar dados antigos](#8-manutenção-purgar-dados-antigos)
-9. [Perguntas frequentes / problemas comuns](#9-perguntas-frequentes--problemas-comuns)
-10. [Compatibilidade com Fortify, Jetstream, Breeze e Sanctum](#10-compatibilidade-com-fortify-jetstream-breeze-e-sanctum)
-11. [Estrutura das tabelas](#11-estrutura-das-tabelas)
+7. [Forçar o lockscreen manualmente](#7-forçar-o-lockscreen-manualmente)
+8. [Todas as opções de configuração explicadas](#8-todas-as-opções-de-configuração-explicadas)
+9. [Manutenção: purgar dados antigos](#9-manutenção-purgar-dados-antigos)
+10. [Perguntas frequentes / problemas comuns](#10-perguntas-frequentes--problemas-comuns)
+11. [Compatibilidade com Fortify, Jetstream, Breeze e Sanctum](#11-compatibilidade-com-fortify-jetstream-breeze-e-sanctum)
+12. [Estrutura das tabelas](#12-estrutura-das-tabelas)
 
 ---
 
@@ -190,7 +191,7 @@ Quando a sessão de um utilizador expira no servidor (por exemplo, o tempo confi
 
 1. Deteta isto através do heartbeat (o próximo ping recebe HTTP 401 — ver secção 3).
 2. Chama, sozinho, um `Auth::logout()` de verdade no servidor — limpando o cookie de sessão como se o utilizador tivesse clicado em "Sair".
-3. Regista este logout automático no histórico, com a origem marcada como `expired_client` (ver secção 9, "Estrutura das tabelas" — isto é auditável, não é um logout "invisível").
+3. Regista este logout automático no histórico, com a origem marcada como `expired_client` (ver secção 12, "Estrutura das tabelas" — isto é auditável, não é um logout "invisível").
 4. Redireciona o navegador para a página de login.
 
 O resultado final é exatamente o que costuma ser esperado deste tipo de sistema: **a sessão expira, e o utilizador simplesmente aparece na tela de login**, sem precisar de clicar em nada, e sem ficar preso numa página com uma sessão morta por trás.
@@ -212,7 +213,7 @@ Se preferir que o pacote apenas **avise** o utilizador da expiração sem fazer 
 LOGIN_TRACKER_AUTO_LOGOUT_ON_EXPIRY=false
 ```
 
-Com isto desativado, o comportamento passa a ser o mesmo de antes desta funcionalidade existir: um aviso na tela, sem chamada nenhuma ao servidor — e a sessão só fica formalmente fechada quando `login-tracker:purge` rodar (secção 8), com origem `inferred_stale` em vez de `expired_client`.
+Com isto desativado, o comportamento passa a ser o mesmo de antes desta funcionalidade existir: um aviso na tela, sem chamada nenhuma ao servidor — e a sessão só fica formalmente fechada quando `login-tracker:purge` rodar (secção 9), com origem `inferred_stale` em vez de `expired_client`.
 
 ### Personalizar o que acontece ao expirar
 
@@ -347,7 +348,68 @@ Estas variáveis chegam **automaticamente** à view configurada (seja a padrão,
 
 ---
 
-## 7. Todas as opções de configuração explicadas
+## 7. Forçar o lockscreen manualmente
+
+Além do bloqueio automático por inatividade (secção 5), o pacote suporta forçar o lockscreen de duas formas: um **botão na própria página** (o utilizador bloqueia a sua própria sessão de propósito) e um **bloqueio remoto** (você força o bloqueio da sessão de outro utilizador, a partir do servidor — por exemplo, um painel de administração, ou um comando de terminal).
+
+As duas formas exigem que o lockscreen esteja ativado (`LOGIN_TRACKER_LOCKSCREEN_ENABLED=true`, secção 5) e que o layout inclua `@loginTrackerLockscreen` — sem isso não existe overlay nenhum na página do utilizador para reagir a nenhum destes pedidos. Se tentar usar `forceLock()` ou `login-tracker:lock` com o lockscreen desativado, nada é gravado — a chamada devolve `0` sessões afetadas sem tocar na base de dados.
+
+### Botão "Bloquear agora" na própria página
+
+Isto é só JavaScript — não precisa de nenhuma chamada ao servidor, porque o utilizador já está na própria aba que quer bloquear. Em qualquer ponto do seu layout (por exemplo, num menu de utilizador):
+
+```html
+<button onclick="window.LoginTrackerLockscreen.lock()">Bloquear agora</button>
+```
+
+`window.LoginTrackerLockscreen` é criado automaticamente pelo `idle.js` (o mesmo script que já detecta inatividade) assim que a página carrega — não precisa de incluir mais nada além do que a instalação do lockscreen (secção 5) já pede.
+
+### Bloqueio remoto (a partir do servidor)
+
+Isto cobre o caso em que **não há nenhuma aba local para chamar `.lock()` diretamente** — por exemplo, um administrador quer bloquear a sessão de outro utilizador, ou você quer disparar isto a partir de algum evento da sua aplicação (uma deteção de atividade suspeita, uma automação, etc.).
+
+Como o servidor não tem uma ligação aberta permanente com o navegador do utilizador (o pacote usa heartbeat/polling em vez de WebSockets, de propósito, para se manter simples — ver secção 4), o pedido de bloqueio é entregue no **próximo heartbeat** daquela sessão, no máximo `ping_interval_seconds` depois (60 segundos por padrão).
+
+**A partir do código PHP da sua aplicação** (a forma recomendada — por exemplo, dentro de um controller de administração):
+
+```php
+use Gsebastiao\LoginTracker\Facades\LoginTracker;
+
+// $user é qualquer instância do seu Model de utilizador, ex: User::find($id)
+
+$sessoesAfetadas = LoginTracker::forceLock($user);
+
+// $sessoesAfetadas é o número de sessões ativas que receberam o pedido.
+// Bloqueia SEMPRE todas as sessões ativas daquele utilizador (todos os
+// dispositivos) — nunca só uma, porque bloquear só um dispositivo e
+// deixar outros abertos seria uma falha de segurança na maioria dos
+// casos de uso deste método.
+```
+
+**A partir do terminal** (útil para automações, cron, ou testar manualmente):
+
+```bash
+php artisan login-tracker:lock 5
+```
+
+Onde `5` é o ID do utilizador (o mesmo valor que `$user->getAuthIdentifier()` devolveria). Se a sua aplicação tiver mais que um Model autenticável (por exemplo, `User` e `Admin`), especifique qual usar:
+
+```bash
+php artisan login-tracker:lock 5 --model="App\Models\Admin"
+```
+
+### O que acontece do lado do utilizador
+
+Nada muda visualmente até o próximo heartbeat correr. Nesse momento, o `heartbeat.js` recebe a instrução do servidor e chama `window.LoginTrackerLockscreen.lock()` sozinho — exatamente o mesmo overlay que apareceria por inatividade normal, incluindo a mesma exigência de confirmar a password para desbloquear.
+
+**Duas limitações a conhecer:**
+
+- **Janela de atraso:** tal como a deteção de expiração de sessão (secção 4), existe um atraso de até `ping_interval_seconds` entre você disparar o bloqueio e ele aparecer de facto no ecrã do utilizador. Isto é uma limitação inerente à abordagem de polling, não um bug.
+- **Só funciona com a aba visível:** o heartbeat só faz ping enquanto a aba está em primeiro plano (visível). Se o utilizador estiver noutra aba/aplicação, o bloqueio só é entregue quando ele voltar a esta aba.
+
+---
+
+## 8. Todas as opções de configuração explicadas
 
 Depois de publicar a configuração (passo 2 da instalação), o ficheiro `config/login-tracker.php` no seu projeto terá comentários detalhados em cada opção. Aqui vai um resumo rápido de referência:
 
@@ -420,7 +482,7 @@ Já explicado em detalhe nas secções 4 e 5 acima.
 
 ---
 
-## 8. Manutenção: purgar dados antigos
+## 9. Manutenção: purgar dados antigos
 
 Com o tempo, a tabela de histórico (`auth_logins`) cresce indefinidamente, e sessões "mortas" (que expiraram sem um logout explícito) ficam com o `last_seen_at` parado, sem serem formalmente fechadas. Um comando artisan trata dos dois problemas:
 
@@ -429,7 +491,7 @@ php artisan login-tracker:purge
 ```
 
 Este comando faz duas coisas:
-1. **Fecha sessões mortas:** qualquer sessão em `auth_sessions` sem sinal de vida há mais tempo que `stale_after_minutes` é marcada como encerrada, e o registo correspondente no histórico é fechado com `logout_reason = 'inferred_stale'` — para você distinguir isto de um logout confirmado (`manual` ou `expired_client`, ver secção 11).
+1. **Fecha sessões mortas:** qualquer sessão em `auth_sessions` sem sinal de vida há mais tempo que `stale_after_minutes` é marcada como encerrada, e o registo correspondente no histórico é fechado com `logout_reason = 'inferred_stale'` — para você distinguir isto de um logout confirmado (`manual` ou `expired_client`, ver secção 12).
 2. **Remove histórico antigo:** se você definir `LOGIN_TRACKER_RETENTION_DAYS` no `.env`, registos de histórico mais antigos que esse número de dias são apagados.
 
 ### Este comando precisa de estar agendado para rodar sozinho
@@ -470,7 +532,7 @@ php artisan login-tracker:purge --days=90    # sobrepõe a retenção configurad
 
 ---
 
-## 9. Perguntas frequentes / problemas comuns
+## 10. Perguntas frequentes / problemas comuns
 
 **"Instalei o pacote mas nada está a ser registado."**
 Confirme que rodou `php artisan migrate` (Passo 3). Depois confirme que o guard usado no seu `Auth::login()` está na lista `'guards' => ['web', 'api']` da configuração — se usa um guard com outro nome, adicione-o lá.
@@ -500,17 +562,20 @@ Sim — o pacote foi feito para suportar isto. Cada sessão (navegador, telemóv
 Sim, o pacote deteta automaticamente se está a lidar com uma sessão de navegador (cookie) ou com um token de API, e trata cada uma corretamente. Só é preciso que o guard correspondente (normalmente `api`) esteja na lista `'guards'` da configuração.
 
 **"Funciona com Fortify?"**
-Login e logout sim, sempre. Tentativas falhadas (`failed`) podem não ser registadas dependendo de como o pipeline de autenticação do Fortify está configurado no seu projeto — isto é um comportamento do próprio Fortify, não deste pacote. Ver a secção 10 para uma explicação completa e como confirmar se o seu projeto é afetado.
+Login e logout sim, sempre. Tentativas falhadas (`failed`) podem não ser registadas dependendo de como o pipeline de autenticação do Fortify está configurado no seu projeto — isto é um comportamento do próprio Fortify, não deste pacote. Ver a secção 11 para uma explicação completa e como confirmar se o seu projeto é afetado.
 
 **"Como sei se um logout foi mesmo o utilizador a sair, ou se foi automático?"**
-Consulte o campo `logout_reason` na tabela `auth_logins` — `manual` significa que alguém clicou em "Sair", `expired_client` significa que o navegador do utilizador detetou a expiração e agiu sozinho, e `inferred_stale` significa que ninguém confirmou nada e o comando de purga deduziu isso mais tarde. Ver a tabela completa na secção 11.
+Consulte o campo `logout_reason` na tabela `auth_logins` — `manual` significa que alguém clicou em "Sair", `expired_client` significa que o navegador do utilizador detetou a expiração e agiu sozinho, e `inferred_stale` significa que ninguém confirmou nada e o comando de purga deduziu isso mais tarde. Ver a tabela completa na secção 12.
 
 **"Não quero o logout automático, só quero um aviso."**
 Defina `LOGIN_TRACKER_AUTO_LOGOUT_ON_EXPIRY=false` no `.env`. Ver secção 4 para detalhes.
 
+**"Chamei `LoginTracker::forceLock($user)` e não aconteceu nada."**
+Confirme três coisas: (1) `LOGIN_TRACKER_LOCKSCREEN_ENABLED=true` no `.env` — sem isto, `forceLock()` devolve `0` sem gravar nada; (2) o utilizador tinha mesmo uma sessão online no momento da chamada — sessões offline nunca recebem o pedido; (3) já passou tempo suficiente (`ping_interval_seconds`, 60s por padrão) para o próximo heartbeat correr. Ver secção 7 para detalhes.
+
 ---
 
-## 10. Compatibilidade com Fortify, Jetstream, Breeze e Sanctum
+## 11. Compatibilidade com Fortify, Jetstream, Breeze e Sanctum
 
 O pacote **não integra diretamente** com nenhum destes pacotes — ele nunca importa nenhuma classe do Fortify, Jetstream, Breeze ou Sanctum. Em vez disso, escuta os eventos **nativos do Laravel Auth** (`Illuminate\Auth\Events\Login`, `Logout`, `Failed`). Isto é uma vantagem na maioria dos casos (funciona com qualquer um destes pacotes, e com qualquer versão deles, sem precisar de atualizações específicas), mas tem uma exceção importante que vale a pena conhecer antes de confiar cegamente na auditoria de tentativas falhadas.
 
@@ -534,11 +599,11 @@ Isto significa, na prática: **não assuma que a auditoria de tentativas falhada
 
 ### Sanctum e Passport (APIs) — funciona sem ressalvas
 
-Guards baseados em token (`api`, ou o nome que você tiver configurado) são detetados automaticamente pelo pacote, tanto para o histórico como para o heartbeat/status online. Não há nenhuma dependência de eventos específicos do Sanctum ou Passport — o pacote só precisa que o guard correspondente esteja listado em `'guards'` na configuração (ver secção 7).
+Guards baseados em token (`api`, ou o nome que você tiver configurado) são detetados automaticamente pelo pacote, tanto para o histórico como para o heartbeat/status online. Não há nenhuma dependência de eventos específicos do Sanctum ou Passport — o pacote só precisa que o guard correspondente esteja listado em `'guards'` na configuração (ver secção 8).
 
 ---
 
-## 11. Estrutura das tabelas
+## 12. Estrutura das tabelas
 
 ### `auth_logins` (histórico)
 

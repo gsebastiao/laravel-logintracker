@@ -47,12 +47,6 @@
         return;
     }
 
-    if (!idleSeconds || idleSeconds <= 0) {
-        // idle_seconds = 0 (ou nao definido) desliga a deteccao mesmo
-        // com o ficheiro incluido - permite desligar so via .env.
-        return;
-    }
-
     function showLockscreen() {
         if (locked) return;
         locked = true;
@@ -73,6 +67,20 @@
     }
 
     function resetTimer() {
+        // idle_seconds = 0 (ou nao definido) desliga a deteccao AUTOMATICA
+        // por inatividade, mas nao desativa o ficheiro inteiro - um
+        // bloqueio manual (via botao, chamando .lock() diretamente, ou
+        // via bloqueio remoto disparado pelo servidor - ver heartbeat.js
+        // e README, seccao "Forcar o lockscreen manualmente") continua a
+        // funcionar mesmo assim. Por isso este early-return esta aqui
+        // dentro, e nao la em cima logo a seguir ao "if (!overlay)": se
+        // estivesse la em cima, a funcao inteira parava antes de expor
+        // window.LoginTrackerLockscreen, e um botao manual de "Bloquear
+        // agora" deixaria de ter o que chamar.
+        if (!idleSeconds || idleSeconds <= 0) {
+            return;
+        }
+
         if (locked) {
             // Enquanto o overlay estiver visivel, nao reinicia o timer
             // com base em atividade DENTRO do proprio overlay (ex: o
@@ -88,7 +96,9 @@
     }
 
     // Eventos que contam como "atividade" e reiniciam a contagem.
-    // passive:true melhora performance de scroll em mobile.
+    // passive:true melhora performance de scroll em mobile. So tem
+    // efeito pratico quando idle_seconds > 0 (ver early-return dentro
+    // de resetTimer), mas registamos sempre - custo irrelevante.
     ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach(function (eventName) {
         document.addEventListener(eventName, resetTimer, { passive: true });
     });
@@ -97,9 +107,13 @@
     // voltar depois de mais tempo que idle_seconds, bloqueia
     // imediatamente ao voltar, em vez de esperar o timer (que fica
     // pausado por navegadores em abas nao visiveis, entao sozinho nao
-    // seria fiavel para este caso).
+    // seria fiavel para este caso). So se aplica com idle_seconds > 0.
     var hiddenAt = null;
     document.addEventListener('visibilitychange', function () {
+        if (!idleSeconds || idleSeconds <= 0) {
+            return;
+        }
+
         if (document.visibilityState === 'hidden') {
             hiddenAt = Date.now();
         } else if (document.visibilityState === 'visible' && hiddenAt) {
@@ -115,10 +129,18 @@
 
     // API publica: o formulario dentro da view de lockscreen (padrao ou
     // customizada) chama window.LoginTrackerLockscreen.unlock() apos
-    // confirmar a password com sucesso no servidor.
+    // confirmar a password com sucesso no servidor. Tambem exposta para
+    // permitir bloquear manualmente - ver README, seccao "Forcar o
+    // lockscreen manualmente" - seja atraves de um botao na propria
+    // pagina (chamando .lock() diretamente), seja atraves de um bloqueio
+    // remoto disparado do lado do servidor (LoginTracker::forceLock($user)
+    // ou o comando "php artisan login-tracker:lock"), que e entregue por
+    // heartbeat.js (ficheiro separado) na resposta ao proximo ping desta
+    // sessao, e que entao chama .lock() aqui.
     window.LoginTrackerLockscreen = {
-        lock: showLockscreen,     // exposto tambem para permitir um botao manual "Bloquear agora", se quiser adicionar um
+        lock: showLockscreen,
         unlock: hideLockscreen,
+        isLocked: function () { return locked; },
     };
 
     resetTimer();

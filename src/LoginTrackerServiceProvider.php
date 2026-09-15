@@ -7,6 +7,7 @@ use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
+use Gsebastiao\LoginTracker\Console\ForceLockCommand;
 use Gsebastiao\LoginTracker\Console\PurgeOldLoginsCommand;
 use Gsebastiao\LoginTracker\Http\Middleware\UpdateLastSeen;
 use Gsebastiao\LoginTracker\Listeners\LogFailedLogin;
@@ -72,6 +73,7 @@ class LoginTrackerServiceProvider extends ServiceProvider
 
             $this->commands([
                 PurgeOldLoginsCommand::class,
+                ForceLockCommand::class,
             ]);
         }
 

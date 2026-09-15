@@ -54,6 +54,31 @@ class HeartbeatController extends Controller
         $now = now();
         $morphName = config('login-tracker.morph_name', 'authenticatable');
 
+        // Le o estado de 'lock_requested_at' ANTES do updateOrCreate
+        // abaixo, e propositadamente NAO incluimos essa coluna no array
+        // de update dele. Isto evita uma condicao de corrida real: se
+        // 'lock_requested_at' estivesse no array de update (como
+        // 'ended_at' esta, sempre a null), um forceLock() chamado por
+        // um admin exatamente durante este pedido seria apagado por
+        // este proprio updateOrCreate antes de ser entregue - o pedido
+        // desapareceria sem o utilizador nunca ter visto o lockscreen.
+        //
+        // Nota de honestidade: isto reduz a janela de corrida a
+        // milissegundos (o intervalo entre este SELECT e o
+        // updateOrCreate abaixo), mas nao a elimina 100% sem uma
+        // transacao com lockForUpdate(). Optamos por nao adicionar essa
+        // complexidade porque o pior cenario aqui e trivial: o pedido
+        // simplesmente sobrevive na coluna e e entregue no PROXIMO
+        // ping (no maximo ping_interval_seconds depois) em vez deste -
+        // nunca ha perda de dado permanente, so um atraso adicional
+        // raro e pequeno.
+        $existingSession = AuthSession::query()
+            ->where('guard', $guard)
+            ->where('session_id', $sessionId)
+            ->first();
+
+        $hadPendingLock = $existingSession && $existingSession->lock_requested_at !== null;
+
         $session = AuthSession::updateOrCreate(
             ['guard' => $guard, 'session_id' => $sessionId],
             [
@@ -73,10 +98,19 @@ class HeartbeatController extends Controller
             $session->update(['started_at' => $now]);
         }
 
+        // Se havia um pedido de bloqueio pendente, consome-o agora
+        // (limpa a coluna) e instrui o heartbeat.js a mostrar o
+        // lockscreen na resposta abaixo. "Consumir" aqui significa que
+        // este e o UNICO ping que recebe a instrucao - se o JS por
+        // algum motivo nao conseguir mostrar o overlay (ex: lockscreen
+        // desativado na config entretanto), o pedido nao e reenviado.
+        $shouldLock = $hadPendingLock && $session->consumePendingLock();
+
         return response()->json([
             'online'          => true,
             'last_seen_at'    => $now->toIso8601String(),
             'next_ping_in'    => config('login-tracker.heartbeat.ping_interval_seconds', 60),
+            'should_lock'     => $shouldLock,
         ]);
     }
 

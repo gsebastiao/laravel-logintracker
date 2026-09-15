@@ -41,6 +41,23 @@
  * instantanea, teria de migrar para WebSockets/Laravel Echo - fora do
  * escopo deste pacote.
  *
+ * BLOQUEIO REMOTO (LoginTracker::forceLock($user) no lado PHP):
+ * A mesma janela de atraso (ping_interval_seconds) aplica-se a um
+ * bloqueio forcado remotamente (ver README, "Forcar o lockscreen
+ * manualmente") - quando o servidor tem um pedido de bloqueio pendente
+ * para esta sessao, a resposta a este ping inclui "should_lock: true",
+ * e este ficheiro chama window.LoginTrackerLockscreen.lock().
+ *
+ * IMPORTANTE: isto so tem efeito se o idle.js (resources/js/idle.js)
+ * TAMBEM estiver carregado na mesma pagina - e ele quem cria o objeto
+ * window.LoginTrackerLockscreen. Os dois ficheiros continuam
+ * logicamente independentes (heartbeat.js nunca falha nem avisa nada
+ * se idle.js nao estiver presente - o "if" e silencioso), mas para o
+ * bloqueio remoto funcionar de facto, ambos precisam de estar incluidos
+ * no layout. Isto normalmente ja acontece sozinho se voce seguiu a
+ * instalacao do lockscreen no README (a diretiva @loginTrackerLockscreen
+ * inclui idle.js automaticamente).
+ *
  * INSTALACAO:
  * Inclua este ficheiro no seu layout autenticado, depois de definir
  * window.LoginTrackerConfig antes dele:
@@ -150,6 +167,13 @@
     function ping() {
         // Nao faz ping se a aba nao estiver visivel - poupa requisicoes
         // desnecessarias quando o utilizador esta noutra aba/janela.
+        // Consequencia direta: um bloqueio remoto (forceLock() - ver
+        // README) so e entregue quando o utilizador voltar a esta aba e
+        // ela ficar visivel de novo (o que dispara um ping extra por
+        // conta do listener de visibilitychange mais abaixo) - nao
+        // instantaneamente enquanto ele esta noutro lado. Isto e
+        // coerente com o proposito do lockscreen: nao ha nada para
+        // "proteger" numa aba que nao esta a ser vista.
         if (document.visibilityState !== 'visible') {
             return;
         }
@@ -166,9 +190,17 @@
             .then(function (response) {
                 if (response.status === 401) {
                     handleExpired();
-                    return;
+                    return null;
                 }
                 return response.json();
+            })
+            .then(function (data) {
+                // data e null quando a resposta foi 401 (ja tratado
+                // acima por handleExpired) - nada mais a fazer aqui
+                // nesse caso.
+                if (data && data.should_lock && window.LoginTrackerLockscreen) {
+                    window.LoginTrackerLockscreen.lock();
+                }
             })
             .catch(function (err) {
                 // Erro de rede (offline, etc) - nao trata como sessao
