@@ -25,7 +25,8 @@ Este README foi escrito para ser seguido do início ao fim **mesmo que você nun
 7. [Todas as opções de configuração explicadas](#7-todas-as-opções-de-configuração-explicadas)
 8. [Manutenção: purgar dados antigos](#8-manutenção-purgar-dados-antigos)
 9. [Perguntas frequentes / problemas comuns](#9-perguntas-frequentes--problemas-comuns)
-10. [Estrutura das tabelas](#10-estrutura-das-tabelas)
+10. [Compatibilidade com Fortify, Jetstream, Breeze e Sanctum](#10-compatibilidade-com-fortify-jetstream-breeze-e-sanctum)
+11. [Estrutura das tabelas](#11-estrutura-das-tabelas)
 
 ---
 
@@ -428,7 +429,7 @@ php artisan login-tracker:purge
 ```
 
 Este comando faz duas coisas:
-1. **Fecha sessões mortas:** qualquer sessão em `auth_sessions` sem sinal de vida há mais tempo que `stale_after_minutes` é marcada como encerrada, e o registo correspondente no histórico é fechado com `logout_reason = 'inferred_stale'` — para você distinguir isto de um logout confirmado (`manual` ou `expired_client`, ver secção 10).
+1. **Fecha sessões mortas:** qualquer sessão em `auth_sessions` sem sinal de vida há mais tempo que `stale_after_minutes` é marcada como encerrada, e o registo correspondente no histórico é fechado com `logout_reason = 'inferred_stale'` — para você distinguir isto de um logout confirmado (`manual` ou `expired_client`, ver secção 11).
 2. **Remove histórico antigo:** se você definir `LOGIN_TRACKER_RETENTION_DAYS` no `.env`, registos de histórico mais antigos que esse número de dias são apagados.
 
 ### Este comando precisa de estar agendado para rodar sozinho
@@ -498,15 +499,46 @@ Sim — o pacote foi feito para suportar isto. Cada sessão (navegador, telemóv
 **"Isto funciona com Laravel Sanctum/Passport (APIs)?"**
 Sim, o pacote deteta automaticamente se está a lidar com uma sessão de navegador (cookie) ou com um token de API, e trata cada uma corretamente. Só é preciso que o guard correspondente (normalmente `api`) esteja na lista `'guards'` da configuração.
 
+**"Funciona com Fortify?"**
+Login e logout sim, sempre. Tentativas falhadas (`failed`) podem não ser registadas dependendo de como o pipeline de autenticação do Fortify está configurado no seu projeto — isto é um comportamento do próprio Fortify, não deste pacote. Ver a secção 10 para uma explicação completa e como confirmar se o seu projeto é afetado.
+
 **"Como sei se um logout foi mesmo o utilizador a sair, ou se foi automático?"**
-Consulte o campo `logout_reason` na tabela `auth_logins` — `manual` significa que alguém clicou em "Sair", `expired_client` significa que o navegador do utilizador detetou a expiração e agiu sozinho, e `inferred_stale` significa que ninguém confirmou nada e o comando de purga deduziu isso mais tarde. Ver a tabela completa na secção 10.
+Consulte o campo `logout_reason` na tabela `auth_logins` — `manual` significa que alguém clicou em "Sair", `expired_client` significa que o navegador do utilizador detetou a expiração e agiu sozinho, e `inferred_stale` significa que ninguém confirmou nada e o comando de purga deduziu isso mais tarde. Ver a tabela completa na secção 11.
 
 **"Não quero o logout automático, só quero um aviso."**
 Defina `LOGIN_TRACKER_AUTO_LOGOUT_ON_EXPIRY=false` no `.env`. Ver secção 4 para detalhes.
 
 ---
 
-## 10. Estrutura das tabelas
+## 10. Compatibilidade com Fortify, Jetstream, Breeze e Sanctum
+
+O pacote **não integra diretamente** com nenhum destes pacotes — ele nunca importa nenhuma classe do Fortify, Jetstream, Breeze ou Sanctum. Em vez disso, escuta os eventos **nativos do Laravel Auth** (`Illuminate\Auth\Events\Login`, `Logout`, `Failed`). Isto é uma vantagem na maioria dos casos (funciona com qualquer um destes pacotes, e com qualquer versão deles, sem precisar de atualizações específicas), mas tem uma exceção importante que vale a pena conhecer antes de confiar cegamente na auditoria de tentativas falhadas.
+
+### Breeze e Jetstream — funciona sem ressalvas
+
+Ambos usam o `Auth::attempt()` do próprio Laravel por baixo (diretamente, no caso do Breeze; através do Fortify, no caso do Jetstream quando configurado com Fortify como backend). Login, logout e tentativas falhadas são todos registados normalmente, sem nenhuma configuração extra.
+
+### Fortify — Login e Logout funcionam sempre; Failed pode não disparar, dependendo da configuração
+
+Isto é uma característica **do próprio Fortify**, não uma limitação deste pacote — mas precisa de ser dita com clareza, porque afeta diretamente um dos três tipos de evento que este pacote audita.
+
+- **Login**: a action interna do Fortify que finaliza uma autenticação bem-sucedida (`PrepareAuthenticatedSession`) chama o mecanismo nativo de login do Laravel — o mesmo que dispara o evento `Login` que este pacote escuta. Funciona sempre, em qualquer configuração de Fortify.
+
+- **Logout**: mesma lógica, funciona sempre.
+
+- **Failed (tentativa de password errada)**: o Fortify **pode ou não** disparar o evento `Illuminate\Auth\Events\Failed`, dependendo da ordem das actions dentro do pipeline `Fortify::authenticateThrough()`, definido no `FortifyServiceProvider` do seu projeto. Se a action `RedirectIfTwoFactorAuthenticatable` estiver posicionada **antes** de `AttemptToAuthenticate` nessa pipeline — o que já foi reportado como comportamento observado nalgumas instalações — a validação de credenciais acontece dentro dessa outra action, e o evento `Failed` nunca chega a ser despoletado.
+
+**Como confirmar se isto afeta o seu projeto:** abra o método `boot()` do seu `app/Providers/FortifyServiceProvider.php` e procure por uma chamada a `Fortify::authenticateThrough(...)`. Se você não tiver essa chamada lá, o Fortify está a usar a ordem padrão da versão instalada — vale a pena testar na prática (tente uma password errada propositadamente e confirme se aparece um registo com `event = 'failed'` na tabela `auth_logins`). Se tiver essa chamada customizada, confirme que `AttemptToAuthenticate::class` aparece **antes** de `RedirectIfTwoFactorAuthenticatable::class` na lista.
+
+Isto significa, na prática: **não assuma que a auditoria de tentativas falhadas está a funcionar com Fortify só porque instalou o pacote** — teste explicitamente esse caso específico no seu projeto antes de depender dele para deteção de força bruta ou auditoria de segurança.
+
+### Sanctum e Passport (APIs) — funciona sem ressalvas
+
+Guards baseados em token (`api`, ou o nome que você tiver configurado) são detetados automaticamente pelo pacote, tanto para o histórico como para o heartbeat/status online. Não há nenhuma dependência de eventos específicos do Sanctum ou Passport — o pacote só precisa que o guard correspondente esteja listado em `'guards'` na configuração (ver secção 7).
+
+---
+
+## 11. Estrutura das tabelas
 
 ### `auth_logins` (histórico)
 
