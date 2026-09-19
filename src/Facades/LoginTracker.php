@@ -19,6 +19,6 @@ class LoginTracker extends Facade
 {
     protected static function getFacadeAccessor(): string
     {
-        return 'login-tracker';
+        return 'logintracker';
     }
 }

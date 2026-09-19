@@ -14,7 +14,7 @@ class LogSuccessfulLogout
             return;
         }
 
-        $morphName = config('login-tracker.morph_name', 'authenticatable');
+        $morphName = config('logintracker.morph_name', 'authenticatable');
         $now = now();
 
         // 1) Fecha o registo de HISTORICO em aberto.
@@ -35,7 +35,7 @@ class LogSuccessfulLogout
         //    AINDA nao tem um logout_at preenchido (isOpen()) - se ja
         //    tiver sido fechado por outra via nesta mesma requisicao,
         //    respeitamos essa origem e nao mexemos mais nele.
-        if (config('login-tracker.events.logout', true)) {
+        if (config('logintracker.events.logout', true)) {
             $lastLogin = AuthLogin::query()
                 ->where($morphName . '_id', $event->user->getAuthIdentifier())
                 ->where($morphName . '_type', get_class($event->user))
@@ -60,8 +60,8 @@ class LogSuccessfulLogout
                     $morphName . '_type' => get_class($event->user),
                     'guard'         => $event->guard,
                     'event'         => 'logout',
-                    'ip_address'    => config('login-tracker.capture.ip_address', true) ? request()?->ip() : null,
-                    'user_agent'    => config('login-tracker.capture.user_agent', true) ? request()?->userAgent() : null,
+                    'ip_address'    => config('logintracker.capture.ip_address', true) ? request()?->ip() : null,
+                    'user_agent'    => config('logintracker.capture.user_agent', true) ? request()?->userAgent() : null,
                     'logout_at'     => $now,
                     'logout_reason' => AuthLogin::LOGOUT_MANUAL,
                 ]);
@@ -81,7 +81,7 @@ class LogSuccessfulLogout
         //    ended_at/last_seen_at = agora numa sessao ja fechada nao
         //    causa nenhum dado incorreto (so grava um timestamp
         //    ligeiramente mais tardio, na pratica milissegundos).
-        if (config('login-tracker.heartbeat.enabled', true)) {
+        if (config('logintracker.heartbeat.enabled', true)) {
             $sessionId = $this->resolveSessionId(request(), $event->guard);
 
             $query = AuthSession::query()
@@ -129,7 +129,7 @@ class LogSuccessfulLogout
 
     protected function guardIsTracked(?string $guard): bool
     {
-        $guards = config('login-tracker.guards', ['web']);
+        $guards = config('logintracker.guards', ['web']);
 
         return in_array('*', $guards, true) || in_array($guard, $guards, true);
     }

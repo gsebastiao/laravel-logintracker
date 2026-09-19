@@ -9,7 +9,7 @@ class LogFailedLogin
 {
     public function handle(Failed $event): void
     {
-        if (! config('login-tracker.events.failed', true)) {
+        if (! config('logintracker.events.failed', true)) {
             return;
         }
 
@@ -17,7 +17,7 @@ class LogFailedLogin
             return;
         }
 
-        $morphName = config('login-tracker.morph_name', 'authenticatable');
+        $morphName = config('logintracker.morph_name', 'authenticatable');
         $request = request();
 
         AuthLogin::create([
@@ -26,14 +26,14 @@ class LogFailedLogin
             'guard'      => $event->guard,
             'event'      => 'failed',
             'identifier' => $event->credentials['email'] ?? $event->credentials['username'] ?? null,
-            'ip_address' => config('login-tracker.capture.ip_address', true) ? $request?->ip() : null,
-            'user_agent' => config('login-tracker.capture.user_agent', true) ? $request?->userAgent() : null,
+            'ip_address' => config('logintracker.capture.ip_address', true) ? $request?->ip() : null,
+            'user_agent' => config('logintracker.capture.user_agent', true) ? $request?->userAgent() : null,
         ]);
     }
 
     protected function guardIsTracked(?string $guard): bool
     {
-        $guards = config('login-tracker.guards', ['web']);
+        $guards = config('logintracker.guards', ['web']);
 
         return in_array('*', $guards, true) || in_array($guard, $guards, true);
     }

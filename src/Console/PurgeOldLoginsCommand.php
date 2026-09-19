@@ -8,7 +8,7 @@ use Gsebastiao\LoginTracker\Models\AuthSession;
 
 class PurgeOldLoginsCommand extends Command
 {
-    protected $signature = 'login-tracker:purge
+    protected $signature = 'logintracker:purge
                             {--days= : Sobrepoe o numero de dias de retencao do historico}
                             {--sessions : So fecha sessoes mortas (staleness), nao apaga historico}
                             {--history : So apaga historico antigo, nao mexe em sessoes}';
@@ -36,10 +36,10 @@ class PurgeOldLoginsCommand extends Command
      */
     protected function purgeHistory(): void
     {
-        $days = $this->option('days') ?? config('login-tracker.retention_days');
+        $days = $this->option('days') ?? config('logintracker.retention_days');
 
         if (empty($days)) {
-            $this->line('Retencao de historico nao configurada (login-tracker.retention_days) - a saltar.');
+            $this->line('Retencao de historico nao configurada (logintracker.retention_days) - a saltar.');
             return;
         }
 
@@ -64,12 +64,12 @@ class PurgeOldLoginsCommand extends Command
      */
     protected function closeStaleSessions(): void
     {
-        if (! config('login-tracker.heartbeat.enabled', true)) {
-            $this->line('Heartbeat desativado (login-tracker.heartbeat.enabled) - a saltar sessoes.');
+        if (! config('logintracker.heartbeat.enabled', true)) {
+            $this->line('Heartbeat desativado (logintracker.heartbeat.enabled) - a saltar sessoes.');
             return;
         }
 
-        $morphName = config('login-tracker.morph_name', 'authenticatable');
+        $morphName = config('logintracker.morph_name', 'authenticatable');
         $staleSessions = AuthSession::query()->stale()->get();
 
         if ($staleSessions->isEmpty()) {

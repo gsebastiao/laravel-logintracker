@@ -3,70 +3,103 @@
 namespace Gsebastiao\LoginTracker\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\RateLimiter;
+use Gsebastiao\LoginTracker\LockState;
 
 /**
- * Responde ao formulario da tela de bloqueio (padrao ou customizada).
+ * Endpoints do lockscreen: bloquear e desbloquear.
  *
- * Este controller NAO sabe nada sobre o VISUAL do lockscreen - so sabe
- * validar a password e fazer logout. Isto e o que permite ao dev trocar
- * a view inteira (config('login-tracker.lockscreen.view')) sem nunca
- * precisar de tocar neste ficheiro: a view so precisa de fazer um POST
- * para $ltUnlockUrl com o campo "password", e um POST para $ltLogoutUrl
- * quando quiser sair.
+ * Este controller nao sabe nada sobre o VISUAL do lockscreen - so
+ * gere o estado. E por isso que se pode trocar a view inteira sem
+ * nunca tocar aqui.
  */
 class LockscreenController extends Controller
 {
     /**
-     * Valida a password do utilizador autenticado e "desbloqueia".
-     * Nao ha nenhum estado de "bloqueado" guardado no servidor - o
-     * bloqueio e um overlay do lado do CLIENTE (JS). Este endpoint so
-     * confirma que quem esta a tentar desbloquear sabe a password da
-     * conta atualmente autenticada, e informa ao JS que pode remover
-     * o overlay.
+     * Bloqueia a sessao atual. Chamado pelo idle.js quando deteta
+     * inatividade, ou por um botao "Bloquear agora" da aplicacao.
+     *
+     * O bloqueio fica gravado no SERVIDOR (sessao + base de dados), e e
+     * isso que o faz sobreviver a um refresh ou a uma aba nova.
+     */
+    public function lock(Request $request): JsonResponse
+    {
+        if (! Auth::check()) {
+            return response()->json(['locked' => false, 'reason' => 'unauthenticated'], 401);
+        }
+
+        LockState::lock();
+
+        return response()->json(['locked' => true]);
+    }
+
+    /**
+     * Valida a password e desbloqueia.
+     *
+     * Protegido por rate limiting: sem isso, o ecra de bloqueio seria
+     * um alvo comodo para tentar passwords a velocidade de maquina,
+     * ja que esta sempre acessivel em qualquer pagina.
      */
     public function unlock(Request $request): JsonResponse
     {
-        $request->validate([
-            'password' => ['required', 'string'],
-        ]);
+        $request->validate(['password' => ['required', 'string']]);
 
         $user = Auth::user();
 
         if (! $user) {
-            return response()->json(['unlocked' => false, 'message' => 'Sessao nao encontrada.'], 401);
+            return response()->json(['unlocked' => false, 'reason' => 'unauthenticated'], 401);
+        }
+
+        $key = 'logintracker-unlock:' . $user->getAuthIdentifier();
+        $maxAttempts = (int) config('logintracker.lockscreen.max_unlock_attempts', 5);
+        $decaySeconds = (int) config('logintracker.lockscreen.unlock_throttle_seconds', 60);
+
+        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+            return response()->json([
+                'unlocked' => false,
+                'message'  => 'Demasiadas tentativas. Tente novamente dentro de ' . RateLimiter::availableIn($key) . ' segundos.',
+            ], 429);
         }
 
         if (! Hash::check($request->input('password'), $user->getAuthPassword())) {
-            throw ValidationException::withMessages([
-                'password' => [__('A password esta incorreta.')],
-            ]);
+            RateLimiter::hit($key, $decaySeconds);
+
+            return response()->json([
+                'unlocked' => false,
+                'message'  => 'Password incorreta.',
+            ], 422);
         }
+
+        RateLimiter::clear($key);
+        LockState::unlock();
 
         return response()->json(['unlocked' => true]);
     }
 
     /**
-     * Logout a partir do ecra de bloqueio (botao "Sair", quando
-     * 'allow_logout_from_lockscreen' esta ativo). Faz logout REAL
-     * (dispara o evento Logout do Laravel, que por sua vez fecha o
-     * historico/sessao deste pacote normalmente - reaproveita a
-     * logica que ja existe, nao ha nada especial aqui).
+     * Logout a partir do ecra de bloqueio. Limpa o estado de bloqueio
+     * antes de terminar a sessao, para nao deixar lixo na base de dados.
      */
-    public function logout(Request $request): RedirectResponse
+    public function logout(Request $request)
     {
+        LockState::unlock();
+
         Auth::guard(config('auth.defaults.guard'))->logout();
 
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        if ($request->hasSession()) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
 
-        $loginRouteName = config('login-tracker.lockscreen.login_route_name', 'login');
+        $route = config('logintracker.lockscreen.login_route_name', 'login');
+        $url = \Illuminate\Support\Facades\Route::has($route) ? route($route) : url('/login');
 
-        return redirect()->route($loginRouteName);
+        return $request->expectsJson()
+            ? response()->json(['logged_out' => true, 'redirect_url' => $url])
+            : redirect()->to($url);
     }
 }

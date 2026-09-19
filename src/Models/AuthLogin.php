@@ -43,9 +43,9 @@ class AuthLogin extends Model
     {
         parent::__construct($attributes);
 
-        $this->setTable(config('login-tracker.table', 'auth_logins'));
+        $this->setTable(config('logintracker.table', 'auth_logins'));
 
-        if ($connection = config('login-tracker.connection')) {
+        if ($connection = config('logintracker.connection')) {
             $this->setConnection($connection);
         }
     }
@@ -66,7 +66,7 @@ class AuthLogin extends Model
 
     public function authenticatable(): MorphTo
     {
-        return $this->morphTo(config('login-tracker.morph_name', 'authenticatable'));
+        return $this->morphTo(config('logintracker.morph_name', 'authenticatable'));
     }
 
     /**

@@ -24,11 +24,11 @@ class UpdateLastSeen
     {
         $response = $next($request);
 
-        if (! config('login-tracker.heartbeat.enabled', true)) {
+        if (! config('logintracker.heartbeat.enabled', true)) {
             return $response;
         }
 
-        if (! config('login-tracker.heartbeat.middleware_enabled', true)) {
+        if (! config('logintracker.heartbeat.middleware_enabled', true)) {
             return $response;
         }
 
@@ -52,7 +52,7 @@ class UpdateLastSeen
             return;
         }
 
-        $throttleSeconds = config('login-tracker.heartbeat.middleware_throttle_seconds', 30);
+        $throttleSeconds = config('logintracker.heartbeat.middleware_throttle_seconds', 30);
         $now = now();
 
         $session = AuthSession::query()
@@ -65,15 +65,15 @@ class UpdateLastSeen
             // Sessao ainda nao existe no heartbeat (ex: user autenticado por
             // outro meio que nao disparou o evento Login, como um guard
             // customizado). Cria aqui para nao perder o rasto.
-            $morphName = config('login-tracker.morph_name', 'authenticatable');
+            $morphName = config('logintracker.morph_name', 'authenticatable');
 
             AuthSession::create([
                 $morphName . '_id'   => $user->getAuthIdentifier(),
                 $morphName . '_type' => get_class($user),
                 'guard'        => $guard,
                 'session_id'   => $sessionId,
-                'ip_address'   => config('login-tracker.capture.ip_address', true) ? $request->ip() : null,
-                'user_agent'   => config('login-tracker.capture.user_agent', true) ? $request->userAgent() : null,
+                'ip_address'   => config('logintracker.capture.ip_address', true) ? $request->ip() : null,
+                'user_agent'   => config('logintracker.capture.user_agent', true) ? $request->userAgent() : null,
                 'started_at'   => $now,
                 'last_seen_at' => $now,
             ]);

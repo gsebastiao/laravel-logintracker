@@ -15,6 +15,7 @@ class AuthSession extends Model
         'started_at'        => 'datetime',
         'last_seen_at'      => 'datetime',
         'ended_at'          => 'datetime',
+        'locked_at'         => 'datetime',
         'lock_requested_at' => 'datetime',
     ];
 
@@ -22,16 +23,16 @@ class AuthSession extends Model
     {
         parent::__construct($attributes);
 
-        $this->setTable(config('login-tracker.sessions_table', 'auth_sessions'));
+        $this->setTable(config('logintracker.sessions_table', 'auth_sessions'));
 
-        if ($connection = config('login-tracker.connection')) {
+        if ($connection = config('logintracker.connection')) {
             $this->setConnection($connection);
         }
     }
 
     public function authenticatable(): MorphTo
     {
-        return $this->morphTo(config('login-tracker.morph_name', 'authenticatable'));
+        return $this->morphTo(config('logintracker.morph_name', 'authenticatable'));
     }
 
     /*
@@ -46,7 +47,7 @@ class AuthSession extends Model
      */
     public function scopeOnline(Builder $query): Builder
     {
-        $thresholdSeconds = config('login-tracker.heartbeat.online_threshold_seconds', 120);
+        $thresholdSeconds = config('logintracker.heartbeat.online_threshold_seconds', 120);
 
         return $query->whereNull('ended_at')
             ->where('last_seen_at', '>=', now()->subSeconds($thresholdSeconds));
@@ -58,7 +59,7 @@ class AuthSession extends Model
      */
     public function scopeOffline(Builder $query): Builder
     {
-        $thresholdSeconds = config('login-tracker.heartbeat.online_threshold_seconds', 120);
+        $thresholdSeconds = config('logintracker.heartbeat.online_threshold_seconds', 120);
 
         return $query->where(function (Builder $q) use ($thresholdSeconds) {
             $q->whereNotNull('ended_at')
@@ -72,10 +73,19 @@ class AuthSession extends Model
      */
     public function scopeStale(Builder $query): Builder
     {
-        $staleMinutes = config('login-tracker.heartbeat.stale_after_minutes', 30);
+        $staleMinutes = config('logintracker.heartbeat.stale_after_minutes', 30);
 
         return $query->whereNull('ended_at')
             ->where('last_seen_at', '<', now()->subMinutes($staleMinutes));
+    }
+
+
+    /**
+     * Sessoes atualmente bloqueadas (lockscreen ativo no servidor).
+     */
+    public function scopeLocked(Builder $query): Builder
+    {
+        return $query->whereNull('ended_at')->whereNotNull('locked_at');
     }
 
     /**
@@ -104,7 +114,7 @@ class AuthSession extends Model
             return false;
         }
 
-        $thresholdSeconds = config('login-tracker.heartbeat.online_threshold_seconds', 120);
+        $thresholdSeconds = config('logintracker.heartbeat.online_threshold_seconds', 120);
 
         return $this->last_seen_at !== null
             && $this->last_seen_at->greaterThanOrEqualTo(now()->subSeconds($thresholdSeconds));
@@ -145,7 +155,7 @@ class AuthSession extends Model
      * tiver a instancia exata de AuthSession em maos.
      *
      * So tem efeito pratico se:
-     *   - config('login-tracker.lockscreen.enabled') for true (nao ha
+     *   - config('logintracker.lockscreen.enabled') for true (nao ha
      *     overlay nenhum na pagina para mostrar, senao);
      *   - a sessao estiver online e a correr heartbeat.js (uma sessao
      *     ja offline nunca vai fazer outro ping para receber isto).
