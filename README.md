@@ -398,7 +398,7 @@ php artisan migrate
 
 (o `--force` substitui as suas edições nesses ficheiros.)
 
-> **Já tinha publicado as migrations antes?** Continua tudo a funcionar: o pacote deteta as suas cópias (mesmo com outro timestamp) e não corre as dele.
+> **Já tinha publicado as migrations antes?** Continua tudo a funcionar, desde que os ficheiros mantenham o nome original — o Laravel identifica as migrations pelo nome, por isso a sua cópia substitui a do pacote e nenhuma corre duas vezes. Se lhes tiver mudado o timestamp, apague-as e volte a publicar com `--force`.
 
 ---
 

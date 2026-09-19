@@ -17,12 +17,6 @@ use Gsebastiao\LoginTracker\View\Composers\LockscreenComposer;
 
 class LoginTrackerServiceProvider extends ServiceProvider
 {
-    /** Ficheiros das migrations (em database/migrations), pela ordem em que correm. */
-    private const MIGRATIONS = [
-        '2026_01_01_000000_create_login_tracker_table.php',
-        '2026_01_01_000001_add_login_tracker_table.php',
-    ];
-
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__ . '/../config/logintracker.php', 'logintracker');
@@ -34,6 +28,16 @@ class LoginTrackerServiceProvider extends ServiceProvider
     {
         $this->loadViewsFrom(__DIR__ . '/../resources/views', 'logintracker');
         $this->loadRoutesFrom(__DIR__ . '/../routes/logintracker.php');
+
+        // As migrations correm com `php artisan migrate`, mesmo sem serem
+        // publicadas. Ficam FORA do runningInConsole(): quem dispara o migrate
+        // a partir de HTTP (Artisan::call('migrate') num instalador, num
+        // webhook de deploy ou nos testes do projeto) tem de as ver na mesma.
+        //
+        // Ao publicar, os ficheiros mantem o nome original; o Laravel indexa
+        // as migrations pelo nome, por isso a copia do projeto substitui a do
+        // pacote e as tabelas nunca sao criadas duas vezes.
+        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
 
         BladeDirective::register();
 
@@ -52,11 +56,9 @@ class LoginTrackerServiceProvider extends ServiceProvider
     }
 
     /**
-     * As migrations correm com `php artisan migrate`, mesmo sem serem
-     * publicadas: a pasta database/migrations do projeto fica limpa.
-     * Publicar e opcional - serve para quem quer editar o esquema antes
-     * de correr. Ao publicar, os ficheiros mantem o nome original, para o
-     * Laravel as reconhecer como as mesmas e nunca as correr duas vezes.
+     * Publicar e opcional - serve para quem quer editar o esquema antes de
+     * correr. Ao publicar, os ficheiros mantem o nome original, para o Laravel
+     * as reconhecer como as mesmas e nunca as correr duas vezes.
      */
     protected function registerPublishing(): void
     {
@@ -64,14 +66,9 @@ class LoginTrackerServiceProvider extends ServiceProvider
             __DIR__ . '/../config/logintracker.php' => config_path('logintracker.php'),
         ], 'logintracker-config');
 
-        $this->loadUnpublishedMigrations();
-
-        $migrations = [];
-        foreach (self::MIGRATIONS as $file) {
-            $migrations[__DIR__ . '/../database/migrations/' . $file]
-                = $this->publishedMigration($file) ?? database_path('migrations/' . $file);
-        }
-        $this->publishes($migrations, 'logintracker-migrations');
+        $this->publishes([
+            __DIR__ . '/../database/migrations' => database_path('migrations'),
+        ], 'logintracker-migrations');
 
         $this->publishes([
             __DIR__ . '/../resources/views' => resource_path('views/vendor/logintracker'),
@@ -80,32 +77,6 @@ class LoginTrackerServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__ . '/../resources/js' => public_path('vendor/logintracker'),
         ], 'logintracker-assets');
-    }
-
-    /**
-     * Carrega do pacote so as migrations que o projeto ainda nao publicou
-     * (com este nome ou com outro timestamp): a copia do projeto tem
-     * prioridade, e as tabelas nunca sao criadas duas vezes.
-     */
-    protected function loadUnpublishedMigrations(): void
-    {
-        foreach (self::MIGRATIONS as $file) {
-            if ($this->publishedMigration($file) === null) {
-                $this->loadMigrationsFrom(__DIR__ . '/../database/migrations/' . $file);
-            }
-        }
-    }
-
-    /**
-     * A copia ja publicada no projeto (qualquer timestamp), ou null.
-     * Republicar com --force atualiza esse mesmo ficheiro em vez de criar
-     * um duplicado.
-     */
-    protected function publishedMigration(string $file): ?string
-    {
-        $name = substr($file, strlen('2026_01_01_000000_'));
-
-        return (glob(database_path('migrations/*_' . $name)) ?: [])[0] ?? null;
     }
 
     protected function registerEventListeners(): void

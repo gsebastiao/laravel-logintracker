@@ -15,11 +15,21 @@ e as versões seguem [Versionamento Semântico](https://semver.org/lang/pt-BR/).
   carregá-las dele (`php artisan migrate` basta) e a pasta `database/migrations`
   do projeto fica limpa. `vendor:publish --tag=logintracker-migrations`
   continua a existir, para quem quer editá-las: os ficheiros mantêm o nome
-  original, e uma cópia já publicada (mesmo com outro timestamp) tem prioridade
-  sobre a do pacote. Quem publicou continua a atualizar com `--force`.
+  original, e é por esse nome que o Laravel as identifica — a cópia do projeto
+  substitui a do pacote e as tabelas nunca são criadas duas vezes. Quem
+  publicou continua a atualizar com `--force`.
 
 ### Corrigido
 
+- **As migrations do pacote passam a ser registadas sempre.** Estavam dentro
+  do bloco `runningInConsole()` e só eram carregadas depois de um `glob()` em
+  `database/migrations` não encontrar uma cópia publicada. Resultado: quem
+  dispara o `migrate` fora da consola (`Artisan::call('migrate')` num
+  instalador, num webhook de deploy ou nos testes do projeto) nunca via as
+  migrations, e a tabela `auth_logins` não era criada. O `loadMigrationsFrom()`
+  passou para fora do `runningInConsole()` e a verificação por `glob()` foi
+  removida — é o Laravel que já descarta a cópia duplicada, porque indexa as
+  migrations pelo nome do ficheiro.
 - `LOGINTRACKER_GUARD` aceita agora valores separados por vírgulas
   (`web,api`); antes, um valor no `.env` chegava como texto e não como lista.
 - Os tempos configuráveis por `.env` (heartbeat, ecrã de bloqueio) chegam ao
