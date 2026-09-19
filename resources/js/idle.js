@@ -1,147 +1,222 @@
 /**
- * Login Tracker - Lockscreen (deteccao de inatividade)
+ * LoginTracker - Lockscreen (inatividade + bloqueio persistente)
  * gsebastiao/laravel-logintracker
  *
- * O QUE ISTO FAZ:
- * Conta ha quanto tempo o utilizador nao mexe no rato, teclado, ou toca
- * no ecra (mobile). Ao passar de "idle_seconds", mostra o overlay de
- * lockscreen (a view Blade que ja vem incluida no HTML da pagina - ver
- * resources/views/lockscreen.blade.php) por CIMA da pagina atual, sem
- * recarregar nada. O utilizador confirma a password para o overlay
- * desaparecer e a contagem reiniciar.
+ * Este ficheiro e carregado automaticamente pela diretiva @logintracker.
+ * Nao precisa de o incluir a mao.
  *
- * DIFERENCA IMPORTANTE em relacao ao heartbeat.js:
- * O heartbeat.js (ficheiro separado) detecta se a SESSAO NO SERVIDOR
- * expirou (ex: passaram-se X horas desde o login, o cookie morreu).
- * Este ficheiro (idle.js) so olha para eventos do RATO/TECLADO no
- * NAVEGADOR - nao faz nenhum pedido ao servidor para decidir quando
- * mostrar o overlay (so faz o pedido quando o utilizador tenta
- * desbloquear, validando a password). Ou seja: o lockscreen pode
- * aparecer mesmo que a sessao no servidor continue perfeitamente
- * valida - o proposito aqui e "o utilizador saiu de frente do
- * computador", nao "a sessao morreu".
+ * O QUE MUDOU EM RELACAO A v1.x (e porque):
+ * Antes, o bloqueio existia apenas numa variavel JavaScript. Bastava
+ * carregar F5 ou abrir uma aba nova para o ecra desaparecer e o sistema
+ * ficar acessivel - era um efeito visual, nao uma protecao.
  *
- * Os dois ficheiros sao independentes e podem ser usados um sem o
- * outro. Se usar os dois, o heartbeat.js continua a correr por baixo
- * do overlay normalmente (o overlay e so visual).
- *
- * INSTALACAO:
- * Este ficheiro so precisa de ser incluido se
- * config('login-tracker.lockscreen.enabled') for true - nesse caso,
- * o pacote inclui-o automaticamente atraves da diretiva Blade
- * @loginTrackerLockscreen (ver README, seccao de instalacao do
- * lockscreen). Normalmente NAO precisa de o incluir manualmente.
+ * Agora o estado vive no SERVIDOR:
+ *   - ao bloquear, avisamos o servidor (POST /logintracker/lock);
+ *   - ao recarregar a pagina, o servidor ja manda o overlay visivel
+ *     (config.startLocked), por isso nao ha sequer um piscar de conteudo;
+ *   - abrir uma aba nova mostra o bloqueio tambem, porque partilham a
+ *     mesma sessao;
+ *   - so a password correta (ou o logout) desbloqueia.
  */
 (function () {
     'use strict';
 
-    var config = window.LoginTrackerLockscreenConfig || {};
-    var idleSeconds = config.idleSeconds || 900;
-    var idleTimer = null;
-    var locked = false;
+    var cfg = window.LoginTrackerConfig || {};
 
-    var overlay = document.getElementById('login-tracker-lockscreen');
-
-    if (!overlay) {
-        console.warn('[LoginTracker] Overlay de lockscreen nao encontrado na pagina - idle.js desativado.');
+    if (!cfg.lockscreenEnabled) {
         return;
     }
 
-    function showLockscreen() {
+    var overlay = document.getElementById('logintracker-lockscreen');
+
+    if (!overlay) {
+        var msg =
+            '[LoginTracker] O elemento #logintracker-lockscreen nao existe nesta pagina.\n' +
+            'Causa mais provavel: falta a diretiva @logintracker no layout Blade desta pagina.\n' +
+            'Adicione @logintracker antes de </body> e corra: php artisan view:clear';
+
+        // Stub seguro: evita "Cannot read properties of undefined" em
+        // botoes que chamem window.LoginTrackerLockscreen.lock().
+        window.LoginTrackerLockscreen = window.LoginTrackerLockscreen || {
+            lock: function () { console.warn(msg); },
+            unlock: function () { console.warn(msg); },
+            isLocked: function () { return false; }
+        };
+
+        console.warn(msg);
+        return;
+    }
+
+    var idleSeconds = cfg.idleSeconds || 0;
+    var idleTimer = null;
+    var locked = false;
+
+    function post(url) {
+        return fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': cfg.csrfToken,
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            credentials: 'same-origin'
+        });
+    }
+
+    function showOverlay() {
+        overlay.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+
+        var input = document.getElementById('logintracker-password');
+        if (input) {
+            setTimeout(function () { input.focus(); }, 50);
+        }
+    }
+
+    function hideOverlay() {
+        overlay.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+
+    /**
+     * Bloqueia. Mostra o overlay imediatamente (resposta visual
+     * instantanea) e avisa o servidor em paralelo, para o bloqueio
+     * persistir num refresh ou noutra aba.
+     */
+    function lock() {
         if (locked) return;
         locked = true;
-        overlay.style.display = 'flex';
 
-        // Foca automaticamente no campo de password, para o utilizador
-        // so precisar de comecar a escrever.
-        var passwordInput = document.getElementById('login-tracker-password');
-        if (passwordInput) {
-            setTimeout(function () { passwordInput.focus(); }, 50);
+        showOverlay();
+        clearTimeout(idleTimer);
+
+        if (cfg.lockUrl) {
+            post(cfg.lockUrl)['catch'](function () {
+                // Se a rede falhar, o overlay continua visivel nesta
+                // aba. O bloqueio pode nao sobreviver a um refresh,
+                // mas e preferivel a nao bloquear de todo.
+                console.warn('[LoginTracker] Nao foi possivel registar o bloqueio no servidor.');
+            });
         }
     }
 
-    function hideLockscreen() {
+    /**
+     * Desbloqueia. Chamado apenas depois de o servidor confirmar a
+     * password - nunca diretamente pelo formulario.
+     */
+    function unlock() {
         locked = false;
-        overlay.style.display = 'none';
-        resetTimer();
+        hideOverlay();
+        resetIdleTimer();
     }
 
-    function resetTimer() {
-        // idle_seconds = 0 (ou nao definido) desliga a deteccao AUTOMATICA
-        // por inatividade, mas nao desativa o ficheiro inteiro - um
-        // bloqueio manual (via botao, chamando .lock() diretamente, ou
-        // via bloqueio remoto disparado pelo servidor - ver heartbeat.js
-        // e README, seccao "Forcar o lockscreen manualmente") continua a
-        // funcionar mesmo assim. Por isso este early-return esta aqui
-        // dentro, e nao la em cima logo a seguir ao "if (!overlay)": se
-        // estivesse la em cima, a funcao inteira parava antes de expor
-        // window.LoginTrackerLockscreen, e um botao manual de "Bloquear
-        // agora" deixaria de ter o que chamar.
-        if (!idleSeconds || idleSeconds <= 0) {
-            return;
-        }
-
-        if (locked) {
-            // Enquanto o overlay estiver visivel, nao reinicia o timer
-            // com base em atividade DENTRO do proprio overlay (ex: o
-            // utilizador a escrever a password conta como "atividade",
-            // mas nao deve desbloquear sozinho - so o submit correto
-            // desbloqueia, via hideLockscreen() chamado pelo unlock()
-            // abaixo).
+    function resetIdleTimer() {
+        if (locked || !idleSeconds || idleSeconds <= 0) {
             return;
         }
 
         clearTimeout(idleTimer);
-        idleTimer = setTimeout(showLockscreen, idleSeconds * 1000);
+        idleTimer = setTimeout(lock, idleSeconds * 1000);
     }
 
-    // Eventos que contam como "atividade" e reiniciam a contagem.
-    // passive:true melhora performance de scroll em mobile. So tem
-    // efeito pratico quando idle_seconds > 0 (ver early-return dentro
-    // de resetTimer), mas registamos sempre - custo irrelevante.
-    ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach(function (eventName) {
-        document.addEventListener(eventName, resetTimer, { passive: true });
+    // --- Estado inicial vindo do servidor -------------------------
+    // Se a sessao ja estava bloqueada, o overlay aparece de imediato,
+    // antes de qualquer interacao. E isto que faz o F5 manter o ecra.
+    if (cfg.startLocked) {
+        locked = true;
+        showOverlay();
+    }
+
+    // --- Formulario de desbloqueio --------------------------------
+    var form = document.getElementById('logintracker-unlock-form');
+    var input = document.getElementById('logintracker-password');
+    var errorBox = document.getElementById('logintracker-error');
+
+    if (form) {
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            if (errorBox) errorBox.style.display = 'none';
+
+            fetch(cfg.unlockUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': cfg.csrfToken,
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({ password: input ? input.value : '' })
+            })
+                .then(function (r) {
+                    return r.json().then(function (d) { return { status: r.status, data: d }; });
+                })
+                .then(function (res) {
+                    if (res.status === 200 && res.data.unlocked) {
+                        if (input) input.value = '';
+                        unlock();
+                        return;
+                    }
+
+                    var text = res.data.message
+                        || (res.data.errors && res.data.errors.password && res.data.errors.password[0])
+                        || 'Password incorreta.';
+
+                    if (errorBox) {
+                        errorBox.textContent = text;
+                        errorBox.style.display = 'block';
+                    }
+
+                    if (input) { input.value = ''; input.focus(); }
+                })
+                ['catch'](function () {
+                    if (errorBox) {
+                        errorBox.textContent = 'Nao foi possivel contactar o servidor.';
+                        errorBox.style.display = 'block';
+                    }
+                });
+        });
+    }
+
+    // --- Deteccao de inatividade ----------------------------------
+    ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach(function (evt) {
+        document.addEventListener(evt, resetIdleTimer, { passive: true });
     });
 
-    // Se a aba ficar invisivel (utilizador foi para outra aba/app) e
-    // voltar depois de mais tempo que idle_seconds, bloqueia
-    // imediatamente ao voltar, em vez de esperar o timer (que fica
-    // pausado por navegadores em abas nao visiveis, entao sozinho nao
-    // seria fiavel para este caso). So se aplica com idle_seconds > 0.
+    // Sair da aba e voltar mais tarde tambem conta como inatividade:
+    // os timers do browser sao suspensos em abas escondidas, por isso
+    // medimos o tempo real de ausencia em vez de confiar no timer.
     var hiddenAt = null;
+
     document.addEventListener('visibilitychange', function () {
-        if (!idleSeconds || idleSeconds <= 0) {
-            return;
-        }
+        if (!idleSeconds || idleSeconds <= 0) return;
 
         if (document.visibilityState === 'hidden') {
             hiddenAt = Date.now();
-        } else if (document.visibilityState === 'visible' && hiddenAt) {
-            var awaySeconds = (Date.now() - hiddenAt) / 1000;
+            return;
+        }
+
+        if (hiddenAt) {
+            var away = (Date.now() - hiddenAt) / 1000;
             hiddenAt = null;
-            if (awaySeconds >= idleSeconds) {
-                showLockscreen();
+
+            if (away >= idleSeconds) {
+                lock();
             } else {
-                resetTimer();
+                resetIdleTimer();
             }
         }
     });
 
-    // API publica: o formulario dentro da view de lockscreen (padrao ou
-    // customizada) chama window.LoginTrackerLockscreen.unlock() apos
-    // confirmar a password com sucesso no servidor. Tambem exposta para
-    // permitir bloquear manualmente - ver README, seccao "Forcar o
-    // lockscreen manualmente" - seja atraves de um botao na propria
-    // pagina (chamando .lock() diretamente), seja atraves de um bloqueio
-    // remoto disparado do lado do servidor (LoginTracker::forceLock($user)
-    // ou o comando "php artisan login-tracker:lock"), que e entregue por
-    // heartbeat.js (ficheiro separado) na resposta ao proximo ping desta
-    // sessao, e que entao chama .lock() aqui.
+    // API publica, para botoes "Bloquear agora" da aplicacao e para o
+    // heartbeat.js entregar bloqueios remotos.
     window.LoginTrackerLockscreen = {
-        lock: showLockscreen,
-        unlock: hideLockscreen,
-        isLocked: function () { return locked; },
+        lock: lock,
+        unlock: unlock,
+        isLocked: function () { return locked; }
     };
 
-    resetTimer();
+    resetIdleTimer();
 })();

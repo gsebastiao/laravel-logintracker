@@ -1,23 +1,32 @@
-# Dependencias instaladas via Composer - nunca commitadas num pacote,
-# quem instala o pacote gera a sua propria via `composer install`.
+# Dependências instaladas pelo Composer. Um pacote não versiona o
+# composer.lock: quem o instala resolve as suas próprias versões.
 /vendor/
 composer.lock
 
-# Ambiente de testes (Orchestra Testbench), se/quando adicionarmos testes
+# Testes (Orchestra Testbench / Pest). O phpunit.xml.dist é versionado;
+# um phpunit.xml local, se existir, sobrepõe-se a ele e não é versionado.
 /build/
-.phpunit.result.cache
 phpunit.xml
+.phpunit.cache/
+.phpunit.result.cache
 
 # Artefactos comuns de IDEs
+*.log
+*.swp
 /.idea/
 /.vscode/
-*.swp
 
 # Sistema operativo
 .DS_Store
 Thumbs.db
 
-# Ficheiros locais de ambiente, caso alguem crie um para testar o pacote
-# isoladamente (ex: um projeto Laravel de teste dentro do proprio repo)
+# Ficheiros locais de ambiente, caso alguém crie um para testar o pacote
+# isoladamente (ex.: um projeto Laravel de teste dentro do próprio repo)
 .env
 .env.backup
+
+# Ficheiros auxiliares de release (mensagens de commit/tag e comandos),
+# usados localmente e nunca versionados
+tag-msg.txt
+commit-msg.txt
+commit-code.txt

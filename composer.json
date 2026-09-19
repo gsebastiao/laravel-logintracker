@@ -1,6 +1,6 @@
 {
     "name": "gsebastiao/laravel-logintracker",
-    "description": "Pacote Laravel para registar entradas e saidas (login/logout), sessoes ativas e status online dos utilizadores, numa tabela configuravel.",
+    "description": "Auditoria de login/logout, estado online em tempo real e ecra de bloqueio por inatividade para Laravel.",
     "type": "library",
     "license": "MIT",
     "keywords": [

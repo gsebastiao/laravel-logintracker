@@ -57,7 +57,7 @@ class LoginTrackerManager
     /**
      * Forca a exibicao do lockscreen em TODAS as sessoes ativas deste
      * utilizador (todos os dispositivos), no proximo heartbeat de cada
-     * uma - no maximo config('login-tracker.heartbeat.ping_interval_seconds')
+     * uma - no maximo config('logintracker.heartbeat.ping_interval_seconds')
      * depois (60s por defeito), a mesma janela de atraso que ja existe
      * para deteccao de expiracao de sessao.
      *
@@ -69,7 +69,7 @@ class LoginTrackerManager
      * AuthSession obtida via activeSessionsFor($user).
      *
      * Requisitos para isto ter efeito pratico:
-     *   - config('login-tracker.lockscreen.enabled') tem de ser true;
+     *   - config('logintracker.lockscreen.enabled') tem de ser true;
      *   - o layout da aplicacao tem de incluir @loginTrackerLockscreen
      *     (ver README) - sem isso nao ha overlay nenhum na pagina do
      *     lado do utilizador para reagir a este pedido;
@@ -83,7 +83,7 @@ class LoginTrackerManager
      */
     public function forceLock(Authenticatable $user): int
     {
-        if (! config('login-tracker.lockscreen.enabled', false)) {
+        if (! config('logintracker.lockscreen.enabled', false)) {
             return 0;
         }
 
@@ -101,7 +101,7 @@ class LoginTrackerManager
      */
     public function historyFor(Authenticatable $user): Collection
     {
-        $morphName = config('login-tracker.morph_name', 'authenticatable');
+        $morphName = config('logintracker.morph_name', 'authenticatable');
 
         return AuthLogin::query()
             ->where($morphName . '_id', $user->getAuthIdentifier())
@@ -112,7 +112,7 @@ class LoginTrackerManager
 
     protected function sessionsFor(Authenticatable $user)
     {
-        $morphName = config('login-tracker.morph_name', 'authenticatable');
+        $morphName = config('logintracker.morph_name', 'authenticatable');
 
         return AuthSession::query()
             ->where($morphName . '_id', $user->getAuthIdentifier())

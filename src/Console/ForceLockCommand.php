@@ -20,7 +20,7 @@ use Gsebastiao\LoginTracker\Facades\LoginTracker;
  */
 class ForceLockCommand extends Command
 {
-    protected $signature = 'login-tracker:lock
+    protected $signature = 'logintracker:lock
                             {user_id : O ID do utilizador (o mesmo valor devolvido por getAuthIdentifier())}
                             {--model= : Classe do Model, se a sua aplicacao tiver mais que um tipo de utilizador autenticavel (ex: --model="App\\Models\\Admin"). Por defeito usa config(\'auth.providers.users.model\')}';
 
@@ -42,8 +42,8 @@ class ForceLockCommand extends Command
             return self::FAILURE;
         }
 
-        if (! config('login-tracker.lockscreen.enabled', false)) {
-            $this->warn('login-tracker.lockscreen.enabled esta desativado na configuracao - LoginTracker::forceLock() nao grava nenhum pedido nesse caso (ver LoginTrackerManager::forceLock()). Ative o lockscreen primeiro (LOGIN_TRACKER_LOCKSCREEN_ENABLED=true) para este comando ter efeito.');
+        if (! config('logintracker.lockscreen.enabled', false)) {
+            $this->warn('logintracker.lockscreen.enabled esta desativado na configuracao - LoginTracker::forceLock() nao grava nenhum pedido nesse caso (ver LoginTrackerManager::forceLock()). Ative o lockscreen primeiro (LOGIN_TRACKER_LOCKSCREEN_ENABLED=true) para este comando ter efeito.');
             return self::SUCCESS;
         }
 
@@ -54,7 +54,7 @@ class ForceLockCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->info("Pedido de bloqueio enviado para {$affected} sessao(oes) ativa(s). Sera entregue no proximo heartbeat de cada uma (ate " . config('login-tracker.heartbeat.ping_interval_seconds', 60) . "s).");
+        $this->info("Pedido de bloqueio enviado para {$affected} sessao(oes) ativa(s). Sera entregue no proximo heartbeat de cada uma (ate " . config('logintracker.heartbeat.ping_interval_seconds', 60) . "s).");
 
         return self::SUCCESS;
     }

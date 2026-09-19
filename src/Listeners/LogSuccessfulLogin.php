@@ -15,16 +15,16 @@ class LogSuccessfulLogin
         }
 
         $request = request();
-        $morphName = config('login-tracker.morph_name', 'authenticatable');
+        $morphName = config('logintracker.morph_name', 'authenticatable');
         $now = now();
 
-        $ip = config('login-tracker.capture.ip_address', true) ? $request?->ip() : null;
-        $userAgent = config('login-tracker.capture.user_agent', true) ? $request?->userAgent() : null;
+        $ip = config('logintracker.capture.ip_address', true) ? $request?->ip() : null;
+        $userAgent = config('logintracker.capture.user_agent', true) ? $request?->userAgent() : null;
         $sessionId = $this->resolveSessionId($request, $event->guard);
 
         // 1) Tabela de HISTORICO (append-only, nunca editada depois - excepto
         //    para preencher logout_at quando a saida acontece/e inferida).
-        if (config('login-tracker.events.login', true)) {
+        if (config('logintracker.events.login', true)) {
             AuthLogin::create([
                 $morphName . '_id'   => $event->user->getAuthIdentifier(),
                 $morphName . '_type' => get_class($event->user),
@@ -39,7 +39,7 @@ class LogSuccessfulLogin
         // 2) Tabela de SESSAO ATIVA (mutavel, responde "esta online").
         //    Se ja existir uma linha para este session_id (ex: login duplicado
         //    na mesma sessao), reabre/atualiza em vez de duplicar.
-        if (config('login-tracker.heartbeat.enabled', true) && $sessionId) {
+        if (config('logintracker.heartbeat.enabled', true) && $sessionId) {
             AuthSession::updateOrCreate(
                 [
                     'guard'      => $event->guard,
@@ -93,7 +93,7 @@ class LogSuccessfulLogin
 
     protected function guardIsTracked(?string $guard): bool
     {
-        $guards = config('login-tracker.guards', ['web']);
+        $guards = config('logintracker.guards', ['web']);
 
         return in_array('*', $guards, true) || in_array($guard, $guards, true);
     }
