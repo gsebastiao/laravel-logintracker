@@ -21,6 +21,17 @@ e as versões seguem [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ### Corrigido
 
+- **`migrate` falhava em MySQL com "Identifier name is too long" (erro 1059).**
+  O índice composto de `auth_sessions` ficava com o nome gerado pelo Laravel,
+  `auth_sessions_authenticatable_id_authenticatable_type_ended_at_index` — 68
+  caracteres, quando o MySQL só aceita 64. O erro acontecia **depois** de as
+  tabelas serem criadas, pelo que a instalação ficava a meio: as tabelas
+  existiam, o índice não, e a migration não chegava a ser registada. O índice
+  passa a ter um nome explícito (`auth_sessions_morph_ended_index`), e a
+  migration incremental `add_login_tracker_table` ganhou um bloco idempotente
+  que o cria nas instalações que apanharam o erro — basta correr
+  `php artisan migrate` outra vez.
+
 - **As migrations do pacote passam a ser registadas sempre.** Estavam dentro
   do bloco `runningInConsole()` e só eram carregadas depois de um `glob()` em
   `database/migrations` não encontrar uma cópia publicada. Resultado: quem

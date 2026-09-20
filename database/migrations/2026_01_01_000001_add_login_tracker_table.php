@@ -50,6 +50,14 @@ return new class extends Migration
         return config('logintracker.sessions_table', 'auth_sessions');
     }
 
+    /** Igual ao da migration "create": ver a explicacao la. */
+    protected function morphEndedIndexName(): string
+    {
+        $name = $this->sessionsTable() . '_morph_ended_index';
+
+        return strlen($name) <= 64 ? $name : substr($name, 0, 55) . substr(md5($name), 0, 9);
+    }
+
     public function up(): void
     {
         $schema = Schema::connection($this->connectionName());
@@ -91,6 +99,31 @@ return new class extends Migration
         }
 
         // ------------------------------------------------------------
+        // v2.0.2 -> indice (morph_id, morph_type, ended_at) em auth_sessions
+        // Ate a v2.0.1 este indice ficava com o nome gerado pelo Laravel,
+        // que passa os 64 caracteres do MySQL: o migrate rebentava com
+        // "Identifier name is too long" (erro 1059) DEPOIS de criar as
+        // tabelas. Quem apanhou esse erro fica com auth_sessions criada mas
+        // sem este indice (e a migration "create" nao volta a mexer-lhe,
+        // porque a tabela ja existe). Este bloco repara isso.
+        // ------------------------------------------------------------
+        $sessions = $this->sessionsTable();
+        $indexName = $this->morphEndedIndexName();
+
+        if ($schema->hasTable($sessions) && ! $this->hasMorphEndedIndex($schema, $sessions, $indexName)) {
+            $morph = config('logintracker.morph_name', 'authenticatable');
+
+            try {
+                $schema->table($sessions, function (Blueprint $table) use ($morph, $indexName) {
+                    $table->index([$morph . '_id', $morph . '_type', 'ended_at'], $indexName);
+                });
+            } catch (\Throwable) {
+                // Ja existe com outro nome (instalacao anterior a este bloco):
+                // nao ha nada a fazer, e o migrate nao deve falhar por isso.
+            }
+        }
+
+        // ------------------------------------------------------------
         // Compatibilidade: instalacoes antigas podem ter o campo
         // booleano logout_inferred. Nao e criado em instalacoes novas,
         // mas se existir, continua a ser preenchido pelo Model.
@@ -101,6 +134,16 @@ return new class extends Migration
         // Siga sempre o padrao: verificar com hasColumn/hasTable antes
         // de alterar, para a migration continuar idempotente.
         // ------------------------------------------------------------
+    }
+
+    /**
+     * Schema::hasIndex() so existe a partir do Laravel 11; em versoes
+     * anteriores devolvemos false e deixamos o try/catch tratar do caso
+     * "ja existe".
+     */
+    protected function hasMorphEndedIndex(object $schema, string $table, string $index): bool
+    {
+        return method_exists($schema, 'hasIndex') && $schema->hasIndex($table, $index);
     }
 
     /**

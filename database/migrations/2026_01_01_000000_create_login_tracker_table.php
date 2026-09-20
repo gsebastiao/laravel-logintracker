@@ -28,6 +28,24 @@ return new class extends Migration
         return config('logintracker.sessions_table', 'auth_sessions');
     }
 
+    /**
+     * Nome do indice composto de auth_sessions.
+     *
+     * O nome que o Laravel geraria sozinho
+     * ("<tabela>_<morph>_id_<morph>_type_ended_at_index") passa os 64
+     * caracteres que o MySQL aceita num identificador, e o migrate falhava
+     * com "Identifier name is too long" (erro 1059). Damos-lhe um nome
+     * curto e estavel; se a tabela ou o morph_name configurados ainda
+     * assim o fizerem crescer demais, o nome e truncado com um sufixo
+     * derivado do nome completo, para continuar unico.
+     */
+    protected function morphEndedIndexName(): string
+    {
+        $name = $this->sessionsTable() . '_morph_ended_index';
+
+        return strlen($name) <= 64 ? $name : substr($name, 0, 55) . substr(md5($name), 0, 9);
+    }
+
     public function up(): void
     {
         $morph = config('logintracker.morph_name', 'authenticatable');
@@ -75,7 +93,10 @@ return new class extends Migration
                 $table->timestamps();
 
                 $table->unique(['guard', 'session_id']);
-                $table->index([$morph . '_id', $morph . '_type', 'ended_at']);
+                $table->index(
+                    [$morph . '_id', $morph . '_type', 'ended_at'],
+                    $this->morphEndedIndexName()
+                );
             });
         }
     }
