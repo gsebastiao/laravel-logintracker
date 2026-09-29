@@ -50,6 +50,14 @@ class AuthLogin extends Model
         }
     }
 
+    /**
+     * Resultado da verificacao da coluna antiga 'logout_inferred', por
+     * "ligacao.tabela" - feita uma vez por processo, nao em cada gravacao.
+     *
+     * @var array<string, bool>
+     */
+    protected static array $hasLogoutInferredColumn = [];
+
     protected static function booted(): void
     {
         // Mantem o campo antigo 'logout_inferred' (boolean) sincronizado
@@ -57,11 +65,26 @@ class AuthLogin extends Model
         // tinha codigo a usar logout_inferred continuar a funcionar sem
         // precisar de mudar nada. So precisa de correr quando
         // logout_reason e de facto alterado nesta gravacao.
+        //
+        // A coluna so existe em instalacoes vindas da v1.x: as migrations
+        // ja nao a criam. Sem ela, escrever o campo fazia todos os logouts
+        // rebentarem com "Unknown column 'logout_inferred'".
         static::saving(function (AuthLogin $log) {
-            if ($log->isDirty('logout_reason')) {
+            if ($log->isDirty('logout_reason') && $log->hasLogoutInferredColumn()) {
                 $log->logout_inferred = $log->logout_reason === self::LOGOUT_INFERRED_STALE;
             }
         });
+    }
+
+    /**
+     * A tabela ainda tem a coluna antiga 'logout_inferred'?
+     */
+    protected function hasLogoutInferredColumn(): bool
+    {
+        $key = ($this->getConnectionName() ?? config('database.default')) . '.' . $this->getTable();
+
+        return static::$hasLogoutInferredColumn[$key]
+            ??= $this->getConnection()->getSchemaBuilder()->hasColumn($this->getTable(), 'logout_inferred');
     }
 
     public function authenticatable(): MorphTo

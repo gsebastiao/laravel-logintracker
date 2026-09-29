@@ -9,6 +9,28 @@ e as versões seguem [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+---
+
+## [2.0.4] — 2026-09-28
+
+### Corrigido
+
+- **O logout falhava sempre com "Unknown column 'logout_inferred'".** O model
+  `AuthLogin` escrevia o campo antigo `logout_inferred` em todas as gravações
+  que mudavam `logout_reason` — ou seja, em todos os logouts (manual, expirado
+  no navegador ou fechado pela purga) —, mas as migrations já não criam essa
+  coluna nas instalações novas. O campo só é sincronizado agora quando a
+  tabela o tem (instalações vindas da v1.x, que continuam a recebê-lo como
+  antes). A verificação da coluna é feita uma vez por processo, não em cada
+  gravação. Quem criou a coluna à mão para contornar o erro pode mantê-la ou
+  apagá-la: as duas situações funcionam.
+
+---
+
+## [2.0.3] — 2026-09-20
+
+Agrupa as alterações publicadas em 2.0.1, 2.0.2 e 2.0.3.
+
 ### Alterado
 
 - **As migrations já não precisam de ser publicadas.** O pacote passa a
@@ -191,6 +213,9 @@ Primeira versão pública.
 
 ---
 
+[Não lançado]: https://github.com/gsebastiao/laravel-logintracker/compare/v2.0.4...HEAD
+[2.0.4]: https://github.com/gsebastiao/laravel-logintracker/releases/tag/v2.0.4
+[2.0.3]: https://github.com/gsebastiao/laravel-logintracker/releases/tag/v2.0.3
 [2.0.0]: https://github.com/gsebastiao/laravel-logintracker/releases/tag/v2.0.0
 [1.1.0]: https://github.com/gsebastiao/laravel-logintracker/releases/tag/v1.1.0
 [1.0.0]: https://github.com/gsebastiao/laravel-logintracker/releases/tag/v1.0.0
